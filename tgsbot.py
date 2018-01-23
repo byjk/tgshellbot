@@ -13,7 +13,7 @@ class TelegramShellBot:
     _bot = None
     _adm_chat_id = 0
     _cmdList = []
-    _config_filename = 'shellbot.conf'
+    _config_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)),'shellbot.conf')
     _plugins = []
 
     def loadplugins(self):
