@@ -1,4 +1,3 @@
-# tgshellbot
 Telegram shell bot
 ==================
 
