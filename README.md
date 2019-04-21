@@ -37,7 +37,7 @@ This command will remove alias_name1
 Plugin is just a python file with 3 mandatory functions:
 * plugin_init(mainbot)
 * plugin_ismycmd(cmd)
-* plugin_handler(msg)
+* plugin_handler(msg, mainbot)
 
 ##### plugin_init
 plugin_init called when bot is started, mainbot is variable that can be used for sending messages to user later
