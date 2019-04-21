@@ -1,10 +1,7 @@
 #/usr/bin/python3
 
-import os
-import time
-import json
-import telepot
-import importlib
+import os, time, json, platform, importlib, subprocess,  telepot 
+from subprocess import TimeoutExpired
 from telepot.loop import MessageLoop
 
 
@@ -15,6 +12,7 @@ class TelegramShellBot:
     _cmdList = []
     _config_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)),'shellbot.conf')
     _plugins = []
+    _encoding = 'utf8'
 
     def loadplugins(self):
         path = os.path.abspath(__file__)
@@ -28,15 +26,6 @@ class TelegramShellBot:
                     self._plugins.append(p)
                 except Exception as e:
                     print ("Error loading plugin {0}: {1}".format(filename, e))
-
-    def find_plugincmd(self, c):
-        for p in self._plugins:
-            try:
-                if p.plugin_ismycmd(c):
-                    return p
-            except:
-                pass
-        return None
 
     def saveconfig(self):
         c = {}
@@ -79,6 +68,15 @@ class TelegramShellBot:
             time.sleep(1)
         return False
 
+    def find_plugincmd(self, txt):
+        for p in self._plugins:
+            try:
+                if p.plugin_ismycmd(txt):
+                    return p
+            except:
+                pass
+        return None
+
     def handle(self, msg):
         content_type, chat_type, chat_id = telepot.glance(msg)
         # print(content_type, chat_type, chat_id)
@@ -87,67 +85,77 @@ class TelegramShellBot:
             if self._adm_chat_id == chat_id:
                 self.handle_master(msg)
             else:
-                self.sendMessage("Non admin message: {0} from {1}".format(msg['text'], chat_id))
+                self.sendMessage("Non admin message: {0} from {1}".format(msg, chat_id))
         except Exception as err:
             self.sendMessage("error: {0}".format(err))
-
-    def cmdHandler(self, txt):
-        cmd = txt.split(' ')
-        c = cmd[0].lower()
-        if c == '/start':
-            self.sendMessage('Hi master!')
-        elif c == '/ping':
-            self.sendMessage('pong')
-        elif c == '/get':
-            self.sendMessage('Not supported. yet')
-            # f = txt[4:].strip()
-            # bot.sendDocument()
-        else:
-            plug = self.find_plugincmd(c[1:])
-            if plug:
-                plug.plugin_handler(txt)
-            else:
-                self.sendMessage('Unsupported command '+c)
-
-    def call_shell(self, text):
-        t = text
-        p = os.popen(t)
-        out = p.read()
-        cod = p.close()
-        if out:
-            while len(out) > 4000:
-                o2, out = out[:4000], out[4000:]
-                self.sendMessage(o2)                            
-            if out:
-                self.sendMessage(out)
-        elif cod:
-            self.sendMessage("exit code " + str(cod))
-        else:
-            self.sendMessage("none")
 
     def handle_master(self, msg):
         content_type, chat_type, chat_id = telepot.glance(msg)
         if content_type == 'text':
             t = msg['text']
             s = t.split(' ')
-            if t[0] == '/':
-                self.cmdHandler(t)        
-            elif len(s) > 0 and s[0].lower() == 'cd':
+            if len(s) > 0 and s[0].lower() == 'cd':
                 if len(s) > 1:
                     os.chdir(s[1])
                 self.sendMessage(os.getcwd())
             else:
-                self.call_shell(t)
+                if not self.cmdHandler(t):        
+                    self.call_shell(t)
         elif content_type == 'document':
             doc = msg['document']
             f = os.path.join(os.getcwd(), doc['file_name'])
             self._bot.download_file(doc['file_id'], f)
             self.sendMessage(f)        
 
+    def cmdHandler(self, txt):
+        cmd = txt.split(' ')
+        c = cmd[0].lower()
+        if c == '/start':
+            self.sendMessage('Hi master!')
+        # elif c == '/ping':
+        #     self.sendMessage('pong')
+        # elif c == '/get':
+        #     self.sendMessage('Not supported. yet')
+        #     f = txt[4:].strip()
+        #     bot.sendDocument()
+        else:
+            plug = self.find_plugincmd(txt)
+            if plug:
+                plug.plugin_handler(txt, self)
+                return True
+            else:
+                return False
+
+    def call_shell(self, text):
+        t = text
+        p = subprocess.Popen(t, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+        out = None
+        try:
+            out, err = p.communicate(timeout=60)
+        except TimeoutExpired:
+            p.terminate()
+            try:
+                out, err = p.communicate(timeout=3)
+            except TimeoutExpired:
+                pass
+            self.sendMessage("timeout")
+        if out:
+            while len(out) > 4000:
+                o2, out = out[:4000], out[4000:]
+                self.sendMessage(o2.decode(self._encoding))                            
+            if out:
+                self.sendMessage(out.decode(self._encoding))
+        elif p.returncode:
+            self.sendMessage("exit code " + str(p.returncode))
+        else:
+            self.sendMessage("none")
+
     def sendMessage(self, msg):
         self._bot.sendMessage(self._adm_chat_id, msg)
 
     def __init__(self):
+        if platform.system() == 'Windows':
+            self._encoding = 'cp1251'
         if not self.loadconfig():
             if not self.setup():
                 print('Wrong setup')
